@@ -1,0 +1,376 @@
+# tfmodule-google-ncc
+
+Terraform module for managing Google Cloud Network Connectivity Center (NCC) resources including hubs and spokes. Network Connectivity Center provides a central console for managing hybrid connectivity through various Google Cloud connectivity products like VPN tunnels, VLAN attachments, Router appliances, and VPC networks.
+
+## Features
+
+- Create and manage Network Connectivity Center hubs
+- Configure spokes with multiple connectivity types:
+  - Router Appliance Instances (third-party network virtual appliances)
+  - VPN Tunnels (Cloud VPN connectivity)
+  - Interconnect Attachments (VLAN attachments)
+  - VPC Networks (VPC spokes for private connectivity)
+  - Producer VPC Networks (for Private Service Connect)
+- Support for site-to-site data transfer settings
+- Flexible route export controls with include/exclude ranges
+- Project-level resource organization with labels
+- Multiple spoke types per hub configuration
+
+## Usage
+
+### Basic Hub and VPC Spoke
+
+```hcl
+module "ncc" {
+  source = "./tfmodule-google-ncc"
+
+  hub = {
+    "my-global-hub" = {
+      description     = "Global connectivity hub"
+      project         = "my-project-id"
+      preset_topology = "MESH"
+      export_psc      = true
+      labels = {
+        environment = "production"
+        team        = "network"
+      }
+    }
+  }
+
+  spoke = {
+    "vpc-spoke-us-central1" = {
+      location    = "us-central1"
+      hub         = "my-global-hub"
+      project     = "my-project-id"
+      description = "US Central VPC spoke"
+      
+      vpc_network = {
+        uri = "https://www.googleapis.com/compute/v1/projects/my-project-id/global/networks/my-vpc"
+      }
+    }
+  }
+}
+```
+
+### VPN Tunnel Spoke
+
+```hcl
+module "ncc" {
+  source = "./tfmodule-google-ncc"
+
+  hub = {
+    "hybrid-hub" = {
+      description = "Hub for hybrid connectivity"
+      project     = "my-project-id"
+    }
+  }
+
+  spoke = {
+    "vpn-spoke-us-east1" = {
+      location    = "us-east1"
+      hub         = "hybrid-hub"
+      project     = "my-project-id"
+      description = "VPN tunnel spoke for on-premises connectivity"
+      
+      vpn_tunnels = {
+        site_to_site_data_transfer = true
+        uris = [
+          "https://www.googleapis.com/compute/v1/projects/my-project-id/regions/us-east1/vpnTunnels/tunnel-1",
+          "https://www.googleapis.com/compute/v1/projects/my-project-id/regions/us-east1/vpnTunnels/tunnel-2"
+        ]
+        include_import_ranges = ["ALL_IPV4_RANGES"]
+      }
+    }
+  }
+}
+```
+
+### Router Appliance Instances Spoke
+
+```hcl
+module "ncc" {
+  source = "./tfmodule-google-ncc"
+
+  hub = {
+    "nva-hub" = {
+      description = "Hub for network virtual appliances"
+      project     = "my-project-id"
+    }
+  }
+
+  spoke = {
+    "router-appliance-spoke" = {
+      location    = "us-west1"
+      hub         = "nva-hub"
+      project     = "my-project-id"
+      description = "Third-party router appliance spoke"
+      
+      router_appliance_instances = {
+        site_to_site_data_transfer = true
+        include_import_ranges      = ["ALL_IPV4_RANGES"]
+        instances = {
+          "instance-1" = {
+            ip_address      = "10.0.1.10"
+            virtual_machine = "https://www.googleapis.com/compute/v1/projects/my-project-id/zones/us-west1-a/instances/nva-1"
+          }
+          "instance-2" = {
+            ip_address      = "10.0.2.10"
+            virtual_machine = "https://www.googleapis.com/compute/v1/projects/my-project-id/zones/us-west1-b/instances/nva-2"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### Interconnect Attachments Spoke
+
+```hcl
+module "ncc" {
+  source = "./tfmodule-google-ncc"
+
+  hub = {
+    "interconnect-hub" = {
+      description = "Hub for dedicated interconnect"
+      project     = "my-project-id"
+    }
+  }
+
+  spoke = {
+    "vlan-attachment-spoke" = {
+      location    = "us-central1"
+      hub         = "interconnect-hub"
+      project     = "my-project-id"
+      description = "VLAN attachment spoke"
+      
+      interconnect_attachments = {
+        site_to_site_data_transfer = false
+        uris = [
+          "https://www.googleapis.com/compute/v1/projects/my-project-id/regions/us-central1/interconnectAttachments/vlan-1"
+        ]
+        include_import_ranges = ["ALL_IPV4_RANGES"]
+      }
+    }
+  }
+}
+```
+
+### VPC Spoke with Route Filtering
+
+```hcl
+module "ncc" {
+  source = "./tfmodule-google-ncc"
+
+  hub = {
+    "filtered-hub" = {
+      description = "Hub with route filtering"
+      project     = "my-project-id"
+    }
+  }
+
+  spoke = {
+    "filtered-vpc-spoke" = {
+      location    = "us-east1"
+      hub         = "filtered-hub"
+      project     = "my-project-id"
+      description = "VPC spoke with route export controls"
+      
+      vpc_network = {
+        uri                   = "https://www.googleapis.com/compute/v1/projects/my-project-id/global/networks/production-vpc"
+        exclude_export_ranges = ["10.100.0.0/16", "10.200.0.0/16"]
+        include_export_ranges = ["10.0.0.0/8"]
+      }
+    }
+  }
+}
+```
+
+### Producer VPC Network Spoke (Private Service Connect)
+
+```hcl
+module "ncc" {
+  source = "./tfmodule-google-ncc"
+
+  hub = {
+    "psc-hub" = {
+      description = "Hub for Private Service Connect"
+      project     = "my-project-id"
+    }
+  }
+
+  spoke = {
+    "producer-vpc-spoke" = {
+      location    = "us-west2"
+      hub         = "psc-hub"
+      project     = "my-project-id"
+      description = "Producer VPC network spoke for PSC"
+      
+      producer_vpc_network = {
+        network               = "https://www.googleapis.com/compute/v1/projects/service-project-id/global/networks/service-vpc"
+        peering               = "servicenetworking-googleapis-com"
+        exclude_export_ranges = ["172.16.0.0/12"]
+        include_export_ranges = ["10.0.0.0/8"]
+      }
+    }
+  }
+}
+```
+
+### Hub with STAR Topology
+
+```hcl
+module "ncc" {
+  source = "./tfmodule-google-ncc"
+
+  hub = {
+    "star-hub" = {
+      description     = "Hub with STAR topology for centralized routing"
+      project         = "my-project-id"
+      preset_topology = "STAR"
+      export_psc      = false
+      labels = {
+        topology = "star"
+        tier     = "enterprise"
+      }
+    }
+  }
+
+  spoke = {
+    "datacenter-spoke" = {
+      location    = "us-central1"
+      hub         = "star-hub"
+      project     = "my-project-id"
+      description = "Central datacenter spoke"
+      
+      router_appliance_instances = {
+        site_to_site_data_transfer = true
+        include_import_ranges      = ["ALL_IPV4_RANGES"]
+        instances = {
+          "nva-primary" = {
+            ip_address      = "10.1.0.10"
+            virtual_machine = "https://www.googleapis.com/compute/v1/projects/my-project-id/zones/us-central1-a/instances/nva-primary"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### Multi-Region Hub with Multiple Spoke Types
+
+```hcl
+module "ncc" {
+  source = "./tfmodule-google-ncc"
+
+  hub = {
+    "global-connectivity-hub" = {
+      description = "Global hub for all connectivity types"
+      project     = "my-project-id"
+      labels = {
+        environment = "production"
+        managed-by  = "terraform"
+      }
+    }
+  }
+
+  spoke = {
+    "vpc-spoke-us" = {
+      location    = "us-central1"
+      hub         = "global-connectivity-hub"
+      project     = "my-project-id"
+      description = "US VPC network spoke"
+      
+      vpc_network = {
+        uri = "https://www.googleapis.com/compute/v1/projects/my-project-id/global/networks/us-vpc"
+      }
+    }
+
+    "vpc-spoke-eu" = {
+      location    = "europe-west1"
+      hub         = "global-connectivity-hub"
+      project     = "my-project-id"
+      description = "EU VPC network spoke"
+      
+      vpc_network = {
+        uri = "https://www.googleapis.com/compute/v1/projects/my-project-id/global/networks/eu-vpc"
+      }
+    }
+
+    "vpn-spoke-onprem" = {
+      location    = "us-east1"
+      hub         = "global-connectivity-hub"
+      project     = "my-project-id"
+      description = "On-premises VPN connectivity"
+      
+      vpn_tunnels = {
+        site_to_site_data_transfer = true
+        uris = [
+          "https://www.googleapis.com/compute/v1/projects/my-project-id/regions/us-east1/vpnTunnels/onprem-tunnel-1",
+          "https://www.googleapis.com/compute/v1/projects/my-project-id/regions/us-east1/vpnTunnels/onprem-tunnel-2"
+        ]
+      }
+    }
+
+    "interconnect-spoke" = {
+      location    = "us-west1"
+      hub         = "global-connectivity-hub"
+      project     = "my-project-id"
+      description = "Dedicated interconnect spoke"
+      
+      interconnect_attachments = {
+        site_to_site_data_transfer = false
+        uris = [
+          "https://www.googleapis.com/compute/v1/projects/my-project-id/regions/us-west1/interconnectAttachments/attachment-1"
+        ]
+      }
+    }
+  }
+}
+```
+
+## Inputs
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| hub | Network Connectivity Center Hub configuration. Map of hub configurations where the key is the hub name. | <pre>map(object({<br>  description      = optional(string, "")<br>  labels           = optional(map(string), {})<br>  project          = optional(string)<br>  preset_topology  = optional(string)<br>  export_psc       = optional(bool, false)<br>}))</pre> | `{}` | no |
+| spoke | Network Connectivity Center Spoke configuration. Map of spoke configurations where the key is the spoke name. Each spoke must specify one of: router_appliance_instances, vpn_tunnels, interconnect_attachments, vpc_network, or producer_vpc_network. | <pre>map(object({<br>  location    = string<br>  hub         = string<br>  project     = string<br>  description = optional(string, "")<br>  labels      = optional(map(string), {})<br><br>  router_appliance_instances = optional(object({<br>    site_to_site_data_transfer = optional(bool, false)<br>    include_import_ranges      = optional(list(string), [])<br>    instances = optional(map(object({<br>      ip_address      = string<br>      virtual_machine = string<br>    })), {})<br>  }))<br><br>  vpn_tunnels = optional(object({<br>    site_to_site_data_transfer = optional(bool, false)<br>    uris                       = list(string)<br>    include_import_ranges      = optional(list(string), [])<br>  }))<br><br>  interconnect_attachments = optional(object({<br>    site_to_site_data_transfer = optional(bool, false)<br>    uris                       = list(string)<br>    include_import_ranges      = optional(list(string), [])<br>  }))<br><br>  vpc_network = optional(object({<br>    uri                   = string<br>    exclude_export_ranges = optional(list(string), [])<br>    include_export_ranges = optional(list(string), [])<br>  }))<br><br>  producer_vpc_network = optional(object({<br>    network               = string<br>    peering               = string<br>    exclude_export_ranges = optional(list(string), [])<br>    include_export_ranges = optional(list(string), [])<br>  }))<br>}))</pre> | `{}` | no |
+
+## Outputs
+
+| Name | Description |
+|------|-------------|
+| hub | Network Connectivity Center Hub details including id, name, description, project, labels, preset_topology, export_psc, and self_link |
+| spoke | Network Connectivity Center Spoke details including id, name, location, hub, project, description, labels, and self_link |
+| hub_ids | Map of hub names to IDs for easy reference |
+| spoke_ids | Map of spoke names to IDs for easy reference |
+
+## Requirements
+
+| Name | Version |
+|------|---------|
+| terraform | >= 1.5.0 |
+| google | >= 7.0.0, < 8.0.0 |
+| google-beta | >= 7.0.0, < 8.0.0 |
+
+## Important Notes
+
+- Each spoke must connect to exactly one hub using the hub name
+- Spokes must specify exactly one connectivity type (router appliance, VPN, interconnect, VPC, or producer VPC)
+- The `site_to_site_data_transfer` setting enables data transfer between spokes in the same hub
+- The `include_import_ranges` parameter controls which IP ranges are allowed during import from hub (does not control transit connectivity). The only allowed value is "ALL_IPV4_RANGES"
+- The `preset_topology` parameter defines hub topology (used when policyMode = PRESET):
+  - `MESH`: All spokes can communicate with each other (default for PRESET mode)
+  - `STAR`: Spokes communicate through a central point
+  - `HYBRID_INSPECTION`: Special topology for inspection scenarios
+  - If unspecified with PRESET mode, defaults to MESH
+  - When policyMode = CUSTOM, presetTopology is set to PRESET_TOPOLOGY_UNSPECIFIED
+- The `export_psc` parameter enables Private Service Connect transitivity - when true, PSC endpoints in VPC spokes are accessible to other spokes in the hub (default: false)
+- Route export ranges (`exclude_export_ranges` and `include_export_ranges`) allow fine-grained control over which routes are shared through NCC
+- Hub resources are global, while spokes are regional resources
+- Dependencies are automatically managed - spokes wait for hub creation
+
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for version history and changes.
